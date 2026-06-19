@@ -3277,7 +3277,7 @@ export function App(): JSX.Element {
         return;
       }
 
-      const isPasteShortcut = e.key.toLowerCase() === "v" && !e.altKey && (isMac ? e.metaKey : e.ctrlKey);
+      const isPasteShortcut = e.key.toLowerCase() === "v" && !e.altKey && !e.shiftKey && (isMac ? e.metaKey : e.ctrlKey);
       if (streamStatus === "streaming" && isPasteShortcut) {
         // Always stop local/browser paste behavior while streaming.
         // If clipboard paste is enabled, send clipboard text into the stream.
@@ -3319,13 +3319,8 @@ export function App(): JSX.Element {
         e.stopPropagation();
         e.stopImmediatePropagation();
         if (streamStatus === "streaming" && videoRef.current) {
-          if (document.pointerLockElement === videoRef.current) {
-            try {
-              (clientRef.current as any).suppressNextSyntheticEscape = true;
-            } catch {
-              // best-effort — client may not be initialised
-            }
-            document.exitPointerLock();
+          if (document.pointerLockElement) {
+            void releasePointerLockIfNeeded();
           } else {
             void requestPointerLockCapture(videoRef.current);
           }
@@ -3380,6 +3375,7 @@ export function App(): JSX.Element {
     handleExitPromptCancel,
     handleExitPromptConfirm,
     handlePromptedStopStream,
+    releasePointerLockIfNeeded,
     requestPointerLockCapture,
     settings.clipboardPaste,
     shortcuts,
@@ -3510,9 +3506,7 @@ export function App(): JSX.Element {
             subscriptionInfo={subscriptionInfo}
             micTrack={clientRef.current?.getMicTrack() ?? null}
             onRequestPointerLock={handleRequestPointerLock}
-            onReleasePointerLock={() => {
-              void releasePointerLockIfNeeded();
-            }}
+            onReleasePointerLock={releasePointerLockIfNeeded}
             allowEscapeToExitFullscreen={settings.allowEscapeToExitFullscreen}
           />
         )}

@@ -21,6 +21,7 @@ import {
 } from "../utils/streamDiagnosticsFormat";
 import { formatElapsed } from "../utils/timeFormat";
 import { useTranslation } from "../i18n";
+import { VjShaderOverlay } from "../vj/VjShaderOverlay";
 
 const ANTI_AFK_TOGGLE_ACK_MS = 5000;
 
@@ -77,7 +78,7 @@ interface StreamViewProps {
   mouseAcceleration: number;
   onMouseAccelerationChange: (value: number) => void;
   onRequestPointerLock?: () => void;
-  onReleasePointerLock?: () => void;
+  onReleasePointerLock?: () => void | Promise<void>;
   microphoneMode: MicrophoneMode;
   onMicrophoneModeChange: (value: MicrophoneMode) => void;
   onScreenshotShortcutChange: (value: string) => void;
@@ -1454,6 +1455,20 @@ export function StreamView({
         return;
       }
 
+      const isVjToggle = event.key.toLowerCase() === "v" && event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey;
+      if (isVjToggle) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        void (async () => {
+          if (document.pointerLockElement && onReleasePointerLock) {
+            await onReleasePointerLock();
+          }
+          window.dispatchEvent(new CustomEvent("opennow:vj-toggle-request"));
+        })();
+        return;
+      }
+
       if (isShortcutMatch(event, screenshotShortcut)) {
         event.preventDefault();
         event.stopPropagation();
@@ -1482,7 +1497,7 @@ export function StreamView({
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [captureScreenshot, handleToggleSideBar, isMacClient, shortcuts.screenshot, shortcuts.recording, toggleRecording]);
+  }, [captureScreenshot, handleToggleSideBar, isMacClient, onReleasePointerLock, shortcuts.screenshot, shortcuts.recording, toggleRecording]);
 
   return (
     <div className={["sv", className].filter(Boolean).join(" ")}>
@@ -1500,6 +1515,10 @@ export function StreamView({
         }}
       />
       <audio ref={setAudioRef} autoPlay playsInline />
+      <VjShaderOverlay
+        videoRef={localVideoRef}
+        active={isStreaming && !isConnecting && !nativeRendererActive}
+      />
       <VideoFocusOnReady
         diagnosticsStore={diagnosticsStore}
         isConnecting={isConnecting}

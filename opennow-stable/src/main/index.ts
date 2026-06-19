@@ -120,6 +120,12 @@ function loadBootstrapVideoPreferences(): BootstrapVideoPreferences {
   }
 }
 
+const envOzonePlatform = process.env.OPENNOW_OZONE_PLATFORM;
+if (envOzonePlatform === "x11" || envOzonePlatform === "wayland") {
+  app.commandLine.appendSwitch("ozone-platform", envOzonePlatform);
+  console.log(`[Main] Ozone platform forced by OPENNOW_OZONE_PLATFORM=${envOzonePlatform}`);
+}
+
 const bootstrapVideoPrefs = loadBootstrapVideoPreferences();
 console.log(
   `[Main] Video acceleration preference: decode=${bootstrapVideoPrefs.decoderPreference}, encode=${bootstrapVideoPrefs.encoderPreference}`,
