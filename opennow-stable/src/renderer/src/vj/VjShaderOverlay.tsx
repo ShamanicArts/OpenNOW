@@ -42,6 +42,7 @@ interface VjShaderSettings {
   opacity: number;
   streamHealthEnabled: boolean;
   showDebugHud: boolean;
+  feedbackResetNonce: number;
   shaderValues: Record<string, Record<string, number>>;
 }
 
@@ -92,6 +93,7 @@ const DEFAULT_SETTINGS: VjShaderSettings = {
   opacity: 1,
   streamHealthEnabled: false,
   showDebugHud: false,
+  feedbackResetNonce: 0,
   shaderValues: {},
 };
 
@@ -149,6 +151,7 @@ function loadSettings(): VjShaderSettings {
       opacity: typeof parsed.opacity === "number" && Number.isFinite(parsed.opacity) ? parsed.opacity : DEFAULT_SETTINGS.opacity,
       streamHealthEnabled: typeof parsed.streamHealthEnabled === "boolean" ? parsed.streamHealthEnabled : DEFAULT_SETTINGS.streamHealthEnabled,
       showDebugHud: typeof parsed.showDebugHud === "boolean" ? parsed.showDebugHud : DEFAULT_SETTINGS.showDebugHud,
+      feedbackResetNonce: typeof parsed.feedbackResetNonce === "number" && Number.isFinite(parsed.feedbackResetNonce) ? parsed.feedbackResetNonce : DEFAULT_SETTINGS.feedbackResetNonce,
       shaderValues,
     };
   } catch {
@@ -311,6 +314,10 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       gui.add(settings, "opacity", 0, 1, 0.01).name("Opacity").onChange(() => saveSettings(settings));
       gui.add(settings, "streamHealthEnabled").name("Stream health uniforms").onChange(() => saveSettings(settings));
       gui.add(settings, "showDebugHud").name("Debug HUD").onChange(() => saveSettings(settings));
+      gui.add({ resetFeedback: () => {
+        settings.feedbackResetNonce += 1;
+        saveSettings(settings);
+      } }, "resetFeedback").name("Reset feedback buffer");
 
       const paramsFolder = gui.addFolder(`${definition.name} params`);
       for (const param of definition.parameters) {
@@ -395,6 +402,8 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
     let lastFrameMs = 0;
     let lastHudUpdate = 0;
     let lastShaderStatus = "not compiled";
+    let lastFeedbackKey = "";
+    let lastFeedbackResetNonce = settingsRef.current.feedbackResetNonce;
     const warnedShaders = new Set<string>();
 
     const syncDisplayMode = (replaceVideo: boolean) => {
@@ -442,6 +451,12 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       const values = getValuesForShader(settings, currentBundle.definition);
 
       resizeCanvasToVideoContent(canvas, video);
+      const feedbackKey = `${currentBundle.definition.id}:${settings.displayMode}:${canvas.width}x${canvas.height}`;
+      if (feedbackKey !== lastFeedbackKey || settings.feedbackResetNonce !== lastFeedbackResetNonce) {
+        effectEngine.reset();
+        lastFeedbackKey = feedbackKey;
+        lastFeedbackResetNonce = settings.feedbackResetNonce;
+      }
       try {
         effectEngine.beginFrame(canvas.width, canvas.height);
       } catch (error) {
@@ -517,7 +532,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         debugHud.textContent = [
           `VJ ${currentBundle.definition.name} (${currentBundle.definition.id})`,
           `category=${currentBundle.definition.category} feedback=${currentBundle.definition.usesFeedback ? "yes" : "no"} status=${lastShaderStatus}`,
-          `display=${settings.displayMode} canvas=${canvas.width}x${canvas.height} fps=${measuredFps.toFixed(1)} frame=${lastFrameMs.toFixed(2)}ms`,
+          `display=${settings.displayMode} canvas=${canvas.width}x${canvas.height} fps=${measuredFps.toFixed(1)} frame=${lastFrameMs.toFixed(2)}ms reset=${settings.feedbackResetNonce}`,
           `streamHealth=${settings.streamHealthEnabled ? "on" : "off"} loss=${health.packetLoss.toFixed(2)} jitter=${health.jitter.toFixed(1)} bitrate=${health.bitrate.toFixed(0)}`,
         ].join("\n");
       }

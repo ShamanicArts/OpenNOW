@@ -139,6 +139,19 @@ export class VjEffectEngine {
     return this.targets[this.writeIndex].texture;
   }
 
+  reset(): void {
+    if (this.width <= 0 || this.height <= 0) return;
+    this.readIndex = 0;
+    this.writeIndex = 1;
+    for (const target of this.targets) {
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, target.framebuffer);
+      this.gl.viewport(0, 0, this.width, this.height);
+      this.gl.clearColor(0, 0, 0, 0);
+      this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+    }
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+  }
+
   beginFrame(width: number, height: number): void {
     this.ensureSize(width, height);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.renderFramebuffer);
