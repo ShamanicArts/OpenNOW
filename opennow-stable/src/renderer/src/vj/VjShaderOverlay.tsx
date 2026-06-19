@@ -40,6 +40,7 @@ interface VjShaderSettings {
   displayMode: VjDisplayMode;
   mode: string;
   opacity: number;
+  streamHealthEnabled: boolean;
   shaderValues: Record<string, Record<string, number>>;
 }
 
@@ -55,7 +56,7 @@ export interface VjStreamHealthUniforms {
 interface VjShaderOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   active: boolean;
-  streamHealth: VjStreamHealthUniforms;
+  streamHealth?: VjStreamHealthUniforms;
 }
 
 interface ProgramBundle {
@@ -73,12 +74,22 @@ const DISPLAY_MODE_LABELS: Record<VjDisplayMode, string> = {
   overlay: "Overlay video",
 };
 
+const ZERO_STREAM_HEALTH: VjStreamHealthUniforms = {
+  packetLoss: 0,
+  jitter: 0,
+  bitrate: 0,
+  framesDropped: 0,
+  decodeFps: 0,
+  renderFps: 0,
+};
+
 const DEFAULT_SETTINGS: VjShaderSettings = {
   enabled: false,
   showGui: false,
   displayMode: "replace",
   mode: DEFAULT_SHADER_ID,
   opacity: 1,
+  streamHealthEnabled: false,
   shaderValues: {},
 };
 
@@ -134,6 +145,7 @@ function loadSettings(): VjShaderSettings {
       displayMode: parsed.displayMode === "overlay" || parsed.displayMode === "replace" ? parsed.displayMode : DEFAULT_SETTINGS.displayMode,
       mode,
       opacity: typeof parsed.opacity === "number" && Number.isFinite(parsed.opacity) ? parsed.opacity : DEFAULT_SETTINGS.opacity,
+      streamHealthEnabled: typeof parsed.streamHealthEnabled === "boolean" ? parsed.streamHealthEnabled : DEFAULT_SETTINGS.streamHealthEnabled,
       shaderValues,
     };
   } catch {
@@ -250,10 +262,10 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const guiHostRef = useRef<HTMLDivElement | null>(null);
   const settingsRef = useRef<VjShaderSettings>(loadSettings());
-  const streamHealthRef = useRef<VjStreamHealthUniforms>(streamHealth);
+  const streamHealthRef = useRef<VjStreamHealthUniforms>(streamHealth ?? ZERO_STREAM_HEALTH);
 
   useEffect(() => {
-    streamHealthRef.current = streamHealth;
+    streamHealthRef.current = streamHealth ?? ZERO_STREAM_HEALTH;
   }, [streamHealth]);
 
   useEffect(() => {
@@ -293,6 +305,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         rebuildGui();
       });
       gui.add(settings, "opacity", 0, 1, 0.01).name("Opacity").onChange(() => saveSettings(settings));
+      gui.add(settings, "streamHealthEnabled").name("Stream health uniforms").onChange(() => saveSettings(settings));
 
       const paramsFolder = gui.addFolder(`${definition.name} params`);
       for (const param of definition.parameters) {
@@ -457,7 +470,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       gl.uniform1f(uniforms.audioHigh, 0);
       gl.uniform1f(uniforms.audioLevel, 0);
 
-      const health = streamHealthRef.current;
+      const health = settings.streamHealthEnabled ? streamHealthRef.current : ZERO_STREAM_HEALTH;
       gl.uniform1f(uniforms.packetLoss, health.packetLoss);
       gl.uniform1f(uniforms.jitter, health.jitter);
       gl.uniform1f(uniforms.bitrate, health.bitrate);
