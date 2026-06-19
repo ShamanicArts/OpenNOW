@@ -24,6 +24,12 @@ const BASE_UNIFORMS = [
   "audioMid",
   "audioHigh",
   "audioLevel",
+  "packetLoss",
+  "jitter",
+  "bitrate",
+  "framesDropped",
+  "decodeFps",
+  "renderFps",
 ] as const;
 
 type VjDisplayMode = "replace" | "overlay";
@@ -37,9 +43,19 @@ interface VjShaderSettings {
   shaderValues: Record<string, Record<string, number>>;
 }
 
+export interface VjStreamHealthUniforms {
+  packetLoss: number;
+  jitter: number;
+  bitrate: number;
+  framesDropped: number;
+  decodeFps: number;
+  renderFps: number;
+}
+
 interface VjShaderOverlayProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   active: boolean;
+  streamHealth: VjStreamHealthUniforms;
 }
 
 interface ProgramBundle {
@@ -230,10 +246,15 @@ function resizeCanvasToVideoContent(canvas: HTMLCanvasElement, video: HTMLVideoE
   }
 }
 
-export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX.Element {
+export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOverlayProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const guiHostRef = useRef<HTMLDivElement | null>(null);
   const settingsRef = useRef<VjShaderSettings>(loadSettings());
+  const streamHealthRef = useRef<VjStreamHealthUniforms>(streamHealth);
+
+  useEffect(() => {
+    streamHealthRef.current = streamHealth;
+  }, [streamHealth]);
 
   useEffect(() => {
     const onToggleRequest = () => {
@@ -435,6 +456,14 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
       gl.uniform1f(uniforms.audioMid, 0);
       gl.uniform1f(uniforms.audioHigh, 0);
       gl.uniform1f(uniforms.audioLevel, 0);
+
+      const health = streamHealthRef.current;
+      gl.uniform1f(uniforms.packetLoss, health.packetLoss);
+      gl.uniform1f(uniforms.jitter, health.jitter);
+      gl.uniform1f(uniforms.bitrate, health.bitrate);
+      gl.uniform1f(uniforms.framesDropped, health.framesDropped);
+      gl.uniform1f(uniforms.decodeFps, health.decodeFps);
+      gl.uniform1f(uniforms.renderFps, health.renderFps);
 
       for (const param of currentBundle.definition.parameters) {
         gl.uniform1f(uniforms[param.uniform], values[param.uniform]);

@@ -40,6 +40,13 @@ uniform float audioLow;
 uniform float audioMid;
 uniform float audioHigh;
 uniform float audioLevel;
+
+uniform float packetLoss;
+uniform float jitter;
+uniform float bitrate;
+uniform float framesDropped;
+uniform float decodeFps;
+uniform float renderFps;
 `;
 }
 

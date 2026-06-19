@@ -21,7 +21,7 @@ import {
 } from "../utils/streamDiagnosticsFormat";
 import { formatElapsed } from "../utils/timeFormat";
 import { useTranslation } from "../i18n";
-import { VjShaderOverlay } from "../vj/VjShaderOverlay";
+import { VjShaderOverlay, type VjStreamHealthUniforms } from "../vj/VjShaderOverlay";
 
 const ANTI_AFK_TOGGLE_ACK_MS = 5000;
 
@@ -622,6 +622,25 @@ export function StreamView({
   const nativeRendererActive = useStreamDiagnosticsSelector(
     diagnosticsStore,
     (stats) => stats.nativeRendererActive,
+  );
+  const vjStreamHealth = useStreamDiagnosticsSelector<VjStreamHealthUniforms>(
+    diagnosticsStore,
+    (stats) => ({
+      packetLoss: stats.packetLossPercent,
+      jitter: stats.jitterMs,
+      bitrate: stats.bitrateKbps,
+      framesDropped: stats.framesDropped,
+      decodeFps: stats.decodeFps,
+      renderFps: stats.renderFps,
+    }),
+    (prev, next) => (
+      prev.packetLoss === next.packetLoss &&
+      prev.jitter === next.jitter &&
+      prev.bitrate === next.bitrate &&
+      prev.framesDropped === next.framesDropped &&
+      prev.decodeFps === next.decodeFps &&
+      prev.renderFps === next.renderFps
+    ),
   );
   const showStatsHud = showStats && !nativeRendererActive && !isConnecting;
 
@@ -1518,6 +1537,7 @@ export function StreamView({
       <VjShaderOverlay
         videoRef={localVideoRef}
         active={isStreaming && !isConnecting && !nativeRendererActive}
+        streamHealth={vjStreamHealth}
       />
       <VideoFocusOnReady
         diagnosticsStore={diagnosticsStore}
