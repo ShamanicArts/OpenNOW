@@ -72,6 +72,11 @@ interface ProgramBundle {
   uniformLocations: Record<string, WebGLUniformLocation | null>;
 }
 
+interface VjParamPreset {
+  name: string;
+  values: Record<string, number>;
+}
+
 const DISPLAY_MODE_LABELS: Record<VjDisplayMode, string> = {
   replace: "Replace video",
   overlay: "Overlay video",
@@ -97,6 +102,37 @@ const DEFAULT_SETTINGS: VjShaderSettings = {
   feedbackResetNonce: 0,
   compilePreflightNonce: 0,
   shaderValues: {},
+};
+
+const VJ_PARAM_PRESETS: Record<string, VjParamPreset[]> = {
+  "datamosh": [
+    {
+      name: "Codec drift",
+      values: { intensity: 0.62, speed: 1.0, param1: 0.72, param2: 0.58, edgeMin: 0.16, edgeMaxBase: 0.74, smearScale: 0.055 },
+    },
+    {
+      name: "Heavy melt",
+      values: { intensity: 0.86, speed: 1.35, param1: 0.28, param2: 0.92, edgeMin: 0.08, edgeMaxBase: 0.42, smearScale: 0.11 },
+    },
+    {
+      name: "Edge protected",
+      values: { intensity: 0.55, speed: 0.85, param1: 0.95, param2: 0.44, edgeMin: 0.18, edgeMaxBase: 0.92, smearScale: 0.04 },
+    },
+  ],
+  "optical-flow": [
+    {
+      name: "Subtle vectors",
+      values: { intensity: 0.42, speed: 1.0, param1: 0.42, param2: 0.35, offsetBase: 0.003, offsetScale: 0.006, lambda: 0.006, overlayGain: 0.55, maskMin: 0.001, maskMax: 0.026 },
+    },
+    {
+      name: "Motion aura",
+      values: { intensity: 0.7, speed: 1.1, param1: 0.68, param2: 0.62, offsetBase: 0.004, offsetScale: 0.01, lambda: 0.004, overlayGain: 0.9, maskMin: 0.001, maskMax: 0.018 },
+    },
+    {
+      name: "High contrast flow",
+      values: { intensity: 0.88, speed: 1.45, param1: 0.86, param2: 0.8, offsetBase: 0.006, offsetScale: 0.014, lambda: 0.003, overlayGain: 1.35, maskMin: 0.0, maskMax: 0.014 },
+    },
+  ],
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -181,6 +217,12 @@ function getValuesForShader(settings: VjShaderSettings, definition: ShaderDefini
   const values = validation.correctedValues ?? defaults;
   settings.shaderValues[definition.id] = values;
   return values;
+}
+
+function setValuesForShader(settings: VjShaderSettings, definition: ShaderDefinition, values: Record<string, number>): void {
+  const defaults = createDefaultValues(definition);
+  const validation = validateShaderParams(definition, { ...defaults, ...values });
+  settings.shaderValues[definition.id] = validation.correctedValues ?? defaults;
 }
 
 function createShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
@@ -326,6 +368,27 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         settings.showDebugHud = true;
         saveSettings(settings);
       } }, "compilePreflight").name("Compile all shaders");
+
+      const presets = VJ_PARAM_PRESETS[definition.id] ?? [];
+      const utilityFolder = gui.addFolder("Shader utilities");
+      utilityFolder.add({ resetParams: () => {
+        setValuesForShader(settings, definition, createDefaultValues(definition));
+        settings.feedbackResetNonce += 1;
+        saveSettings(settings);
+        rebuildGui();
+      } }, "resetParams").name("Reset params to defaults");
+      if (presets.length > 0) {
+        const presetState = { preset: presets[0].name };
+        utilityFolder.add(presetState, "preset", presets.map((preset) => preset.name)).name("Feedback preset");
+        utilityFolder.add({ loadPreset: () => {
+          const preset = presets.find((item) => item.name === presetState.preset) ?? presets[0];
+          setValuesForShader(settings, definition, preset.values);
+          settings.feedbackResetNonce += 1;
+          saveSettings(settings);
+          rebuildGui();
+        } }, "loadPreset").name("Load preset");
+      }
+      utilityFolder.open();
 
       const paramsFolder = gui.addFolder(`${definition.name} params`);
       for (const param of definition.parameters) {
