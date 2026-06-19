@@ -43,6 +43,7 @@ interface VjShaderSettings {
   streamHealthEnabled: boolean;
   showDebugHud: boolean;
   feedbackResetNonce: number;
+  compilePreflightNonce: number;
   shaderValues: Record<string, Record<string, number>>;
 }
 
@@ -94,6 +95,7 @@ const DEFAULT_SETTINGS: VjShaderSettings = {
   streamHealthEnabled: false,
   showDebugHud: false,
   feedbackResetNonce: 0,
+  compilePreflightNonce: 0,
   shaderValues: {},
 };
 
@@ -152,6 +154,7 @@ function loadSettings(): VjShaderSettings {
       streamHealthEnabled: typeof parsed.streamHealthEnabled === "boolean" ? parsed.streamHealthEnabled : DEFAULT_SETTINGS.streamHealthEnabled,
       showDebugHud: typeof parsed.showDebugHud === "boolean" ? parsed.showDebugHud : DEFAULT_SETTINGS.showDebugHud,
       feedbackResetNonce: typeof parsed.feedbackResetNonce === "number" && Number.isFinite(parsed.feedbackResetNonce) ? parsed.feedbackResetNonce : DEFAULT_SETTINGS.feedbackResetNonce,
+      compilePreflightNonce: typeof parsed.compilePreflightNonce === "number" && Number.isFinite(parsed.compilePreflightNonce) ? parsed.compilePreflightNonce : DEFAULT_SETTINGS.compilePreflightNonce,
       shaderValues,
     };
   } catch {
@@ -318,6 +321,11 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         settings.feedbackResetNonce += 1;
         saveSettings(settings);
       } }, "resetFeedback").name("Reset feedback buffer");
+      gui.add({ compilePreflight: () => {
+        settings.compilePreflightNonce += 1;
+        settings.showDebugHud = true;
+        saveSettings(settings);
+      } }, "compilePreflight").name("Compile all shaders");
 
       const paramsFolder = gui.addFolder(`${definition.name} params`);
       for (const param of definition.parameters) {
@@ -402,6 +410,8 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
     let lastFrameMs = 0;
     let lastHudUpdate = 0;
     let lastShaderStatus = "not compiled";
+    let preflightReport = "preflight=not run";
+    let lastCompilePreflightNonce = settingsRef.current.compilePreflightNonce;
     let lastFeedbackKey = "";
     let lastFeedbackResetNonce = settingsRef.current.feedbackResetNonce;
     const warnedShaders = new Set<string>();
@@ -432,6 +442,30 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       }
     };
 
+    const runCompilePreflight = (): void => {
+      const started = performance.now();
+      const failures: string[] = [];
+      let passed = 0;
+      for (const shaderId of SHADER_IDS) {
+        const definition = getDefinition(shaderId);
+        try {
+          const testBundle = createProgramBundle(gl, definition);
+          gl.deleteProgram(testBundle.program);
+          passed += 1;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+          failures.push(`${definition.id}: ${reason}`);
+        }
+      }
+      const elapsed = performance.now() - started;
+      preflightReport = failures.length === 0
+        ? `preflight=pass ${passed}/${SHADER_IDS.length} shaders in ${elapsed.toFixed(1)}ms`
+        : `preflight=fail ${passed}/${SHADER_IDS.length} shaders in ${elapsed.toFixed(1)}ms :: ${failures.join(" | ")}`;
+      if (failures.length > 0) {
+        console.warn("[VJ] Shader compile preflight failures:", failures);
+      }
+    };
+
     const render = () => {
       raf = window.requestAnimationFrame(render);
       const frameStart = performance.now();
@@ -445,6 +479,11 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         debugHud.style.display = settings.showDebugHud ? "block" : "none";
       }
       if (!shouldRender) return;
+
+      if (settings.compilePreflightNonce !== lastCompilePreflightNonce) {
+        lastCompilePreflightNonce = settings.compilePreflightNonce;
+        runCompilePreflight();
+      }
 
       const currentBundle = getProgramBundle(settings.mode);
       if (!currentBundle) return;
@@ -533,6 +572,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
           `VJ ${currentBundle.definition.name} (${currentBundle.definition.id})`,
           `category=${currentBundle.definition.category} feedback=${currentBundle.definition.usesFeedback ? "yes" : "no"} status=${lastShaderStatus}`,
           `display=${settings.displayMode} canvas=${canvas.width}x${canvas.height} fps=${measuredFps.toFixed(1)} frame=${lastFrameMs.toFixed(2)}ms reset=${settings.feedbackResetNonce}`,
+          preflightReport,
           `streamHealth=${settings.streamHealthEnabled ? "on" : "off"} loss=${health.packetLoss.toFixed(2)} jitter=${health.jitter.toFixed(1)} bitrate=${health.bitrate.toFixed(0)}`,
         ].join("\n");
       }
