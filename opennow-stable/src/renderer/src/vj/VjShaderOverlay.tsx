@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import GUI from "lil-gui";
+import { VjEffectEngine } from "./VjEffectEngine";
 import { assembleVjShader, type VjAssembledShader } from "./shaders/ShaderAssembler";
 import { getAllShaderIds, getShader } from "./shaders/registry";
 import { createDefaultValues, validateShaderParams, type ShaderDefinition } from "./shaders/types";
@@ -336,6 +337,16 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
+    let effectEngine: VjEffectEngine;
+    try {
+      effectEngine = new VjEffectEngine(gl);
+    } catch (error) {
+      console.warn("[VJ] Feedback engine setup failed:", error);
+      gl.deleteTexture(texture);
+      gl.deleteBuffer(vertexBuffer);
+      return;
+    }
+
     let raf = 0;
     let bundle: ProgramBundle | null = null;
     let warnedUpload = false;
@@ -379,9 +390,12 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
       const values = getValuesForShader(settings, currentBundle.definition);
 
       resizeCanvasToVideoContent(canvas, video);
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      try {
+        effectEngine.beginFrame(canvas.width, canvas.height);
+      } catch (error) {
+        console.warn("[VJ] Feedback render target failed:", error);
+        return;
+      }
       gl.useProgram(currentBundle.program);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
@@ -406,7 +420,7 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.activeTexture(gl.TEXTURE2);
-      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.bindTexture(gl.TEXTURE_2D, effectEngine.feedbackTexture);
 
       const uniforms = currentBundle.uniformLocations;
       gl.uniform1i(uniforms.map, 0);
@@ -427,6 +441,8 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
       }
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+      effectEngine.blitToCanvas(canvas.width, canvas.height);
+      effectEngine.endFrame();
     };
 
     raf = window.requestAnimationFrame(render);
@@ -436,6 +452,7 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
       delete canvas.dataset.vjDisplayMode;
       gl.deleteTexture(texture);
       gl.deleteBuffer(vertexBuffer);
+      effectEngine.destroy();
       if (bundle) gl.deleteProgram(bundle.program);
     };
   }, [active, videoRef]);
