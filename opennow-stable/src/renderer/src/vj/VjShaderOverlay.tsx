@@ -40,6 +40,7 @@ interface VjShaderSettings {
   displayMode: VjDisplayMode;
   mode: string;
   opacity: number;
+  renderScale: number;
   streamHealthEnabled: boolean;
   showDebugHud: boolean;
   feedbackResetNonce: number;
@@ -97,6 +98,7 @@ const DEFAULT_SETTINGS: VjShaderSettings = {
   displayMode: "replace",
   mode: DEFAULT_SHADER_ID,
   opacity: 1,
+  renderScale: 1,
   streamHealthEnabled: false,
   showDebugHud: false,
   feedbackResetNonce: 0,
@@ -187,6 +189,7 @@ function loadSettings(): VjShaderSettings {
       displayMode: parsed.displayMode === "overlay" || parsed.displayMode === "replace" ? parsed.displayMode : DEFAULT_SETTINGS.displayMode,
       mode,
       opacity: typeof parsed.opacity === "number" && Number.isFinite(parsed.opacity) ? parsed.opacity : DEFAULT_SETTINGS.opacity,
+      renderScale: typeof parsed.renderScale === "number" && Number.isFinite(parsed.renderScale) ? Math.max(0.25, Math.min(1, parsed.renderScale)) : DEFAULT_SETTINGS.renderScale,
       streamHealthEnabled: typeof parsed.streamHealthEnabled === "boolean" ? parsed.streamHealthEnabled : DEFAULT_SETTINGS.streamHealthEnabled,
       showDebugHud: typeof parsed.showDebugHud === "boolean" ? parsed.showDebugHud : DEFAULT_SETTINGS.showDebugHud,
       feedbackResetNonce: typeof parsed.feedbackResetNonce === "number" && Number.isFinite(parsed.feedbackResetNonce) ? parsed.feedbackResetNonce : DEFAULT_SETTINGS.feedbackResetNonce,
@@ -275,7 +278,7 @@ function createProgramBundle(gl: WebGLRenderingContext, definition: ShaderDefini
   };
 }
 
-function resizeCanvasToVideoContent(canvas: HTMLCanvasElement, video: HTMLVideoElement): void {
+function resizeCanvasToVideoContent(canvas: HTMLCanvasElement, video: HTMLVideoElement, renderScale: number): void {
   const containerWidth = Math.max(1, video.clientWidth);
   const containerHeight = Math.max(1, video.clientHeight);
   const videoWidth = video.videoWidth || containerWidth;
@@ -301,8 +304,9 @@ function resizeCanvasToVideoContent(canvas: HTMLCanvasElement, video: HTMLVideoE
   canvas.style.height = `${displayHeight}px`;
 
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  const pixelWidth = Math.max(1, Math.round(displayWidth * dpr));
-  const pixelHeight = Math.max(1, Math.round(displayHeight * dpr));
+  const scale = Math.max(0.25, Math.min(1, renderScale));
+  const pixelWidth = Math.max(1, Math.round(displayWidth * dpr * scale));
+  const pixelHeight = Math.max(1, Math.round(displayHeight * dpr * scale));
   if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
     canvas.width = pixelWidth;
     canvas.height = pixelHeight;
@@ -357,6 +361,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         rebuildGui();
       });
       gui.add(settings, "opacity", 0, 1, 0.01).name("Opacity").onChange(() => saveSettings(settings));
+      gui.add(settings, "renderScale", 0.25, 1, 0.05).name("Render scale").onChange(() => saveSettings(settings));
       gui.add(settings, "streamHealthEnabled").name("Stream health uniforms").onChange(() => saveSettings(settings));
       gui.add(settings, "showDebugHud").name("Debug HUD").onChange(() => saveSettings(settings));
       gui.add({ resetFeedback: () => {
@@ -552,7 +557,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       if (!currentBundle) return;
       const values = getValuesForShader(settings, currentBundle.definition);
 
-      resizeCanvasToVideoContent(canvas, video);
+      resizeCanvasToVideoContent(canvas, video, settings.renderScale);
       const feedbackKey = `${currentBundle.definition.id}:${settings.displayMode}:${canvas.width}x${canvas.height}`;
       if (feedbackKey !== lastFeedbackKey || settings.feedbackResetNonce !== lastFeedbackResetNonce) {
         effectEngine.reset();
@@ -634,7 +639,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
         debugHud.textContent = [
           `VJ ${currentBundle.definition.name} (${currentBundle.definition.id})`,
           `category=${currentBundle.definition.category} feedback=${currentBundle.definition.usesFeedback ? "yes" : "no"} status=${lastShaderStatus}`,
-          `display=${settings.displayMode} canvas=${canvas.width}x${canvas.height} fps=${measuredFps.toFixed(1)} frame=${lastFrameMs.toFixed(2)}ms reset=${settings.feedbackResetNonce}`,
+          `display=${settings.displayMode} scale=${settings.renderScale.toFixed(2)} canvas=${canvas.width}x${canvas.height} fps=${measuredFps.toFixed(1)} frame=${lastFrameMs.toFixed(2)}ms reset=${settings.feedbackResetNonce}`,
           preflightReport,
           `streamHealth=${settings.streamHealthEnabled ? "on" : "off"} loss=${health.packetLoss.toFixed(2)} jitter=${health.jitter.toFixed(1)} bitrate=${health.bitrate.toFixed(0)}`,
         ].join("\n");
