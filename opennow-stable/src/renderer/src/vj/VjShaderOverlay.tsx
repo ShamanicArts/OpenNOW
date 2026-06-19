@@ -22,9 +22,12 @@ type VjShaderMode =
   | "kaleidoscope"
   | "pixel-sort-lite";
 
+type VjDisplayMode = "replace" | "overlay";
+
 interface VjShaderSettings {
   enabled: boolean;
   showGui: boolean;
+  displayMode: VjDisplayMode;
   mode: VjShaderMode;
   opacity: number;
   intensity: number;
@@ -56,9 +59,15 @@ const MODE_TO_ID: Record<VjShaderMode, number> = {
   "pixel-sort-lite": 14,
 };
 
+const DISPLAY_MODE_LABELS: Record<VjDisplayMode, string> = {
+  replace: "Replace video",
+  overlay: "Overlay video",
+};
+
 const DEFAULT_SETTINGS: VjShaderSettings = {
   enabled: false,
   showGui: false,
+  displayMode: "replace",
   mode: "rgb-split",
   opacity: 1,
   intensity: 0.45,
@@ -75,6 +84,7 @@ function loadSettings(): VjShaderSettings {
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      displayMode: parsed.displayMode === "overlay" || parsed.displayMode === "replace" ? parsed.displayMode : DEFAULT_SETTINGS.displayMode,
       mode: typeof parsed.mode === "string" && parsed.mode in MODE_TO_ID ? parsed.mode as VjShaderMode : DEFAULT_SETTINGS.mode,
     };
   } catch {
@@ -458,6 +468,7 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
       gui = new GUI({ title: "OpenNOW VJ" });
       host.appendChild(gui.domElement);
       gui.add(settings, "enabled").name("Enable").onChange(() => saveSettings(settings));
+      gui.add(settings, "displayMode", DISPLAY_MODE_LABELS).name("Display mode").onChange(() => saveSettings(settings));
       gui.add(settings, "mode", Object.keys(MODE_TO_ID)).name("Shader").onChange(() => saveSettings(settings));
       gui.add(settings, "opacity", 0, 1, 0.01).name("Opacity").onChange(() => saveSettings(settings));
       gui.add(settings, "intensity", 0, 1, 0.01).name("Intensity").onChange(() => saveSettings(settings));
@@ -538,11 +549,17 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
 
     let raf = 0;
     let warnedUpload = false;
+    const syncDisplayMode = (replaceVideo: boolean) => {
+      video.classList.toggle("sv-video--vj-replace", replaceVideo);
+      canvas.dataset.vjDisplayMode = settingsRef.current.displayMode;
+    };
     const render = () => {
       raf = window.requestAnimationFrame(render);
       const settings = settingsRef.current;
       const shouldRender = active && settings.enabled && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      const replaceVideo = shouldRender && settings.displayMode === "replace";
       canvas.style.display = shouldRender ? "block" : "none";
+      syncDisplayMode(replaceVideo);
       if (!shouldRender) return;
 
       resizeCanvasToVideoContent(canvas, video);
@@ -585,6 +602,8 @@ export function VjShaderOverlay({ videoRef, active }: VjShaderOverlayProps): JSX
     raf = window.requestAnimationFrame(render);
     return () => {
       window.cancelAnimationFrame(raf);
+      video.classList.remove("sv-video--vj-replace");
+      delete canvas.dataset.vjDisplayMode;
       gl.deleteTexture(texture);
       gl.deleteBuffer(vertexBuffer);
       gl.deleteProgram(program);

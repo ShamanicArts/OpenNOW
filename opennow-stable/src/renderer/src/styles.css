@@ -5600,6 +5600,11 @@ button.game-card-store-chip.owned.active:hover {
   position: relative;
   z-index: 1;
   outline: none;
+  transition: opacity 120ms linear;
+}
+
+.sv-video--vj-replace {
+  opacity: 0;
 }
 
 .sv-video:focus,
@@ -5614,6 +5619,10 @@ button.game-card-store-chip.owned.active:hover {
   display: none;
   pointer-events: none;
   object-fit: contain;
+}
+
+.vj-shader-overlay[data-vj-display-mode="replace"] {
+  background: #000;
 }
 
 .vj-gui-host {
