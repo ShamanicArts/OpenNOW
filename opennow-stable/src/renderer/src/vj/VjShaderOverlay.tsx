@@ -41,6 +41,7 @@ interface VjShaderSettings {
   mode: string;
   opacity: number;
   streamHealthEnabled: boolean;
+  showDebugHud: boolean;
   shaderValues: Record<string, Record<string, number>>;
 }
 
@@ -90,6 +91,7 @@ const DEFAULT_SETTINGS: VjShaderSettings = {
   mode: DEFAULT_SHADER_ID,
   opacity: 1,
   streamHealthEnabled: false,
+  showDebugHud: false,
   shaderValues: {},
 };
 
@@ -146,6 +148,7 @@ function loadSettings(): VjShaderSettings {
       mode,
       opacity: typeof parsed.opacity === "number" && Number.isFinite(parsed.opacity) ? parsed.opacity : DEFAULT_SETTINGS.opacity,
       streamHealthEnabled: typeof parsed.streamHealthEnabled === "boolean" ? parsed.streamHealthEnabled : DEFAULT_SETTINGS.streamHealthEnabled,
+      showDebugHud: typeof parsed.showDebugHud === "boolean" ? parsed.showDebugHud : DEFAULT_SETTINGS.showDebugHud,
       shaderValues,
     };
   } catch {
@@ -261,6 +264,7 @@ function resizeCanvasToVideoContent(canvas: HTMLCanvasElement, video: HTMLVideoE
 export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOverlayProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const guiHostRef = useRef<HTMLDivElement | null>(null);
+  const debugHudRef = useRef<HTMLDivElement | null>(null);
   const settingsRef = useRef<VjShaderSettings>(loadSettings());
   const streamHealthRef = useRef<VjStreamHealthUniforms>(streamHealth ?? ZERO_STREAM_HEALTH);
 
@@ -306,6 +310,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       });
       gui.add(settings, "opacity", 0, 1, 0.01).name("Opacity").onChange(() => saveSettings(settings));
       gui.add(settings, "streamHealthEnabled").name("Stream health uniforms").onChange(() => saveSettings(settings));
+      gui.add(settings, "showDebugHud").name("Debug HUD").onChange(() => saveSettings(settings));
 
       const paramsFolder = gui.addFolder(`${definition.name} params`);
       for (const param of definition.parameters) {
@@ -384,6 +389,12 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
     let raf = 0;
     let bundle: ProgramBundle | null = null;
     let warnedUpload = false;
+    let frameCount = 0;
+    let fpsWindowStart = performance.now();
+    let measuredFps = 0;
+    let lastFrameMs = 0;
+    let lastHudUpdate = 0;
+    let lastShaderStatus = "not compiled";
     const warnedShaders = new Set<string>();
 
     const syncDisplayMode = (replaceVideo: boolean) => {
@@ -400,8 +411,10 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       }
       try {
         bundle = createProgramBundle(gl, definition);
+        lastShaderStatus = "compiled";
         return bundle;
       } catch (error) {
+        lastShaderStatus = "compile failed";
         if (!warnedShaders.has(definition.id)) {
           warnedShaders.add(definition.id);
           console.warn(`[VJ] Shader '${definition.id}' setup failed:`, error);
@@ -412,11 +425,16 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
 
     const render = () => {
       raf = window.requestAnimationFrame(render);
+      const frameStart = performance.now();
       const settings = settingsRef.current;
       const shouldRender = active && settings.enabled && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
       const replaceVideo = shouldRender && settings.displayMode === "replace";
       canvas.style.display = shouldRender ? "block" : "none";
       syncDisplayMode(replaceVideo);
+      const debugHud = debugHudRef.current;
+      if (debugHud) {
+        debugHud.style.display = settings.showDebugHud ? "block" : "none";
+      }
       if (!shouldRender) return;
 
       const currentBundle = getProgramBundle(settings.mode);
@@ -485,6 +503,24 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       effectEngine.blitToCanvas(canvas.width, canvas.height);
       effectEngine.endFrame();
+
+      frameCount += 1;
+      const now = performance.now();
+      if (now - fpsWindowStart >= 500) {
+        measuredFps = frameCount / ((now - fpsWindowStart) / 1000);
+        frameCount = 0;
+        fpsWindowStart = now;
+      }
+      lastFrameMs = now - frameStart;
+      if (debugHud && settings.showDebugHud && now - lastHudUpdate >= 250) {
+        lastHudUpdate = now;
+        debugHud.textContent = [
+          `VJ ${currentBundle.definition.name} (${currentBundle.definition.id})`,
+          `category=${currentBundle.definition.category} feedback=${currentBundle.definition.usesFeedback ? "yes" : "no"} status=${lastShaderStatus}`,
+          `display=${settings.displayMode} canvas=${canvas.width}x${canvas.height} fps=${measuredFps.toFixed(1)} frame=${lastFrameMs.toFixed(2)}ms`,
+          `streamHealth=${settings.streamHealthEnabled ? "on" : "off"} loss=${health.packetLoss.toFixed(2)} jitter=${health.jitter.toFixed(1)} bitrate=${health.bitrate.toFixed(0)}`,
+        ].join("\n");
+      }
     };
 
     raf = window.requestAnimationFrame(render);
@@ -502,6 +538,7 @@ export function VjShaderOverlay({ videoRef, active, streamHealth }: VjShaderOver
   return (
     <>
       <canvas ref={canvasRef} className="vj-shader-overlay" aria-hidden="true" />
+      <div ref={debugHudRef} className="vj-debug-hud" aria-hidden="true" />
       <div ref={guiHostRef} className="vj-gui-host" />
     </>
   );

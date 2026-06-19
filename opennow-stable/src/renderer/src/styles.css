@@ -5625,6 +5625,25 @@ button.game-card-store-chip.owned.active:hover {
   background: #000;
 }
 
+.vj-debug-hud {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 1190;
+  display: none;
+  max-width: min(560px, calc(100vw - 28px));
+  padding: 10px 12px;
+  border: 1px solid rgba(120, 255, 190, 0.22);
+  border-radius: 12px;
+  background: rgba(8, 10, 14, 0.78);
+  color: #bfffe4;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+
 .vj-gui-host {
   position: absolute;
   top: 14px;
